@@ -10,8 +10,28 @@ const services = [
 
 const allTimes = ['10:00am', '11:30am', '1:00pm', '2:30pm', '4:00pm']
 
+function getDateString(offsetDays) {
+  const d = new Date()
+  d.setDate(d.getDate() + offsetDays)
+  return d.toISOString().split('T')[0] // YYYY-MM-DD
+}
+
+function formatDateLabel(offsetDays) {
+  if (offsetDays === 0) return 'Today'
+  if (offsetDays === 1) return 'Tomorrow'
+  const d = new Date()
+  d.setDate(d.getDate() + offsetDays)
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+const dateOptions = [0, 1, 2, 3, 4].map((offset) => ({
+  value: getDateString(offset),
+  label: formatDateLabel(offset),
+}))
+
 function App() {
   const [view, setView] = useState('book')
+  const [selectedDate, setSelectedDate] = useState(dateOptions[0].value)
   const [selectedService, setSelectedService] = useState(null)
   const [selectedTime, setSelectedTime] = useState(null)
   const [name, setName] = useState('')
@@ -27,20 +47,26 @@ function App() {
     const { data, error } = await supabase
       .from('booking')
       .select('*')
+      .order('booking_date', { ascending: true })
       .order('created_at', { ascending: false })
 
     if (!error) setBookings(data)
     setLoadingBookings(false)
   }
 
-  const fetchBookedTimes = async () => {
-    const { data, error } = await supabase.from('booking').select('time_slot')
+  const fetchBookedTimes = async (date) => {
+    const { data, error } = await supabase
+      .from('booking')
+      .select('time_slot')
+      .eq('booking_date', date)
+
     if (!error) setBookedTimes(data.map((b) => b.time_slot))
   }
 
   useEffect(() => {
-    fetchBookedTimes()
-  }, [])
+    fetchBookedTimes(selectedDate)
+    setSelectedTime(null)
+  }, [selectedDate])
 
   useEffect(() => {
     if (view === 'dashboard') {
@@ -52,17 +78,17 @@ function App() {
     setSaving(true)
     setError('')
 
-    // Re-check right before saving, in case someone else just took this slot
     const { data: freshBooked } = await supabase
       .from('booking')
       .select('time_slot')
+      .eq('booking_date', selectedDate)
       .eq('time_slot', selectedTime)
 
     if (freshBooked && freshBooked.length > 0) {
       setError('Sorry, that time was just taken. Please pick another.')
       setSaving(false)
       setSelectedTime(null)
-      fetchBookedTimes()
+      fetchBookedTimes(selectedDate)
       return
     }
 
@@ -71,6 +97,7 @@ function App() {
       service: selectedService.name,
       price: selectedService.price,
       time_slot: selectedTime,
+      booking_date: selectedDate,
     })
 
     setSaving(false)
@@ -80,7 +107,7 @@ function App() {
       console.error(error)
     } else {
       setConfirmed(true)
-      fetchBookedTimes()
+      fetchBookedTimes(selectedDate)
     }
   }
 
@@ -107,7 +134,23 @@ function App() {
 
       {view === 'book' && (
         <>
-          <p>Choose a service and time to book</p>
+          <p>Choose a date, service and time to book</p>
+
+          <h2>Date</h2>
+          <div className="list horizontal">
+            {dateOptions.map((d) => (
+              <button
+                key={d.value}
+                className={selectedDate === d.value ? 'selected' : ''}
+                onClick={() => {
+                  setSelectedDate(d.value)
+                  setConfirmed(false)
+                }}
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
 
           <h2>Services</h2>
           <div className="list">
@@ -125,7 +168,7 @@ function App() {
           {selectedService && (
             <>
               <h2>Available times</h2>
-              {availableTimes.length === 0 && <p>No times left today.</p>}
+              {availableTimes.length === 0 && <p>No times left for this day.</p>}
               <div className="list">
                 {availableTimes.map((time) => (
                   <button
@@ -157,7 +200,8 @@ function App() {
 
           {confirmed && (
             <p className="success">
-              ✅ Booking confirmed for {name} — {selectedService.name} at {selectedTime}
+              ✅ Booking confirmed for {name} — {selectedService.name} on{' '}
+              {dateOptions.find((d) => d.value === selectedDate)?.label} at {selectedTime}
             </p>
           )}
         </>
@@ -171,7 +215,8 @@ function App() {
           <div className="list">
             {bookings.map((b) => (
               <div key={b.id} className="booking-row">
-                <strong>{b.customer_name}</strong> — {b.service} — {b.time_slot} — ₦{b.price}
+                <strong>{b.customer_name}</strong> — {b.service} — {b.booking_date} —{' '}
+                {b.time_slot} — ₦{b.price}
               </div>
             ))}
           </div>

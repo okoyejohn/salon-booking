@@ -138,3 +138,15 @@ input:focus {
   border-radius: 10px;
   font-size: 14px;
 }
+
+.list.horizontal {
+  display: flex;
+  flex-direction: row;
+  overflow-x: auto;
+  gap: 8px;
+}
+
+.list.horizontal button {
+  flex-shrink: 0;
+  width: auto;
+}
