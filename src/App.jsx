@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
+import Auth from './Auth'
 import './App.css'
 
 const services = [
@@ -13,7 +14,7 @@ const allTimes = ['10:00am', '11:30am', '1:00pm', '2:30pm', '4:00pm']
 function getDateString(offsetDays) {
   const d = new Date()
   d.setDate(d.getDate() + offsetDays)
-  return d.toISOString().split('T')[0] // YYYY-MM-DD
+  return d.toISOString().split('T')[0]
 }
 
 function formatDateLabel(offsetDays) {
@@ -30,6 +31,10 @@ const dateOptions = [0, 1, 2, 3, 4].map((offset) => ({
 }))
 
 function App() {
+  const [session, setSession] = useState(null)
+  const [business, setBusiness] = useState(null)
+  const [checkingSession, setCheckingSession] = useState(true)
+
   const [view, setView] = useState('book')
   const [selectedDate, setSelectedDate] = useState(dateOptions[0].value)
   const [selectedService, setSelectedService] = useState(null)
@@ -41,6 +46,35 @@ function App() {
   const [bookings, setBookings] = useState([])
   const [loadingBookings, setLoadingBookings] = useState(false)
   const [bookedTimes, setBookedTimes] = useState([])
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      setCheckingSession(false)
+    })
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+
+    return () => listener.subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (session) {
+      fetchBusiness()
+    }
+  }, [session])
+
+  const fetchBusiness = async () => {
+    const { data, error } = await supabase
+      .from('businesses')
+      .select('*')
+      .eq('owner_id', session.user.id)
+      .single()
+
+    if (!error) setBusiness(data)
+  }
 
   const fetchBookings = async () => {
     setLoadingBookings(true)
@@ -104,18 +138,33 @@ function App() {
 
     if (error) {
       setError('Something went wrong, please try again.')
-      console.error(error)
     } else {
       setConfirmed(true)
       fetchBookedTimes(selectedDate)
     }
   }
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    setBusiness(null)
+  }
+
   const availableTimes = allTimes.filter((t) => !bookedTimes.includes(t))
+
+  if (checkingSession) {
+    return <div className="page"><p>Loading...</p></div>
+  }
+
+  if (!session) {
+    return <Auth onAuthSuccess={() => {}} />
+  }
 
   return (
     <div className="page">
-      <h1>Bella's Salon</h1>
+      <h1>{business ? business.business_name : 'QuickSlot'}</h1>
+      <button onClick={handleLogout} style={{ marginBottom: 16, background: 'none', border: 'none', color: '#b5654a', textDecoration: 'underline', cursor: 'pointer' }}>
+        Log out
+      </button>
 
       <div className="tabs">
         <button
